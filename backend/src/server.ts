@@ -1,0 +1,141 @@
+import cors from 'cors'
+import express from 'express'
+import morgan from 'morgan'
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
+import {
+  database,
+  deleteSession,
+  findSessionUser,
+  findUserByEmail,
+  findUserById,
+  insertSession,
+  insertUser,
+} from './database.js'
+
+const app = express()
+const port = Number(process.env.PORT ?? 3000)
+const scrypt = promisify(scryptCallback)
+const sessionDurationMs = 1000 * 60 * 60 * 24 * 30
+
+app.use(cors({ origin: true, credentials: true }))
+app.use(express.json())
+app.use(morgan('dev'))
+
+const publicUser = (user: { id: number; full_name: string; email: string; created_at: string }) => ({
+  id: user.id,
+  fullName: user.full_name,
+  email: user.email,
+  createdAt: user.created_at,
+})
+
+const normalizeEmail = (email: string) => email.trim().toLowerCase()
+
+const hashPassword = async (password: string) => {
+  const salt = randomBytes(16).toString('hex')
+  const derivedKey = (await scrypt(password, salt, 64)) as Buffer
+  return `${salt}:${derivedKey.toString('hex')}`
+}
+
+const verifyPassword = async (password: string, storedHash: string) => {
+  const [salt, key] = storedHash.split(':')
+  if (!salt || !key) return false
+
+  const derivedKey = (await scrypt(password, salt, 64)) as Buffer
+  const storedKey = Buffer.from(key, 'hex')
+  return storedKey.length === derivedKey.length && timingSafeEqual(storedKey, derivedKey)
+}
+
+const readSessionToken = (request: express.Request) => {
+  const cookies = request.headers.cookie?.split(';').map((cookie) => cookie.trim()) ?? []
+  return cookies.find((cookie) => cookie.startsWith('farflung_session='))?.split('=')[1]
+}
+
+const setSessionCookie = (response: express.Response, token: string) => {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  response.setHeader('Set-Cookie', `farflung_session=${token}; HttpOnly; Path=/; Max-Age=${sessionDurationMs / 1000}; SameSite=Lax${secure}`)
+}
+
+app.post('/api/auth/signup', async (request, response) => {
+  const fullName = typeof request.body?.fullName === 'string' ? request.body.fullName.trim() : ''
+  const email = typeof request.body?.email === 'string' ? normalizeEmail(request.body.email) : ''
+  const password = typeof request.body?.password === 'string' ? request.body.password : ''
+
+  if (!fullName || !email || password.length < 8) {
+    response.status(400).json({ message: 'Name, valid email, and an 8-character password are required.' })
+    return
+  }
+
+  if (findUserByEmail.get(email)) {
+    response.status(409).json({ message: 'An account with that email already exists.' })
+    return
+  }
+
+  try {
+    const result = insertUser.run(fullName, email, await hashPassword(password))
+    const user = findUserById.get(Number(result.lastInsertRowid))
+    if (!user) throw new Error('User was not created')
+
+    const token = randomBytes(32).toString('hex')
+    insertSession.run(token, user.id, new Date(Date.now() + sessionDurationMs).toISOString())
+    setSessionCookie(response, token)
+    response.status(201).json({ user: publicUser(user) })
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+      response.status(409).json({ message: 'An account with that email already exists.' })
+      return
+    }
+    response.status(500).json({ message: 'Could not create the account.' })
+  }
+})
+
+app.post('/api/auth/login', async (request, response) => {
+  const email = typeof request.body?.email === 'string' ? normalizeEmail(request.body.email) : ''
+  const password = typeof request.body?.password === 'string' ? request.body.password : ''
+  const user = findUserByEmail.get(email)
+
+  if (!user || !(await verifyPassword(password, user.password_hash))) {
+    response.status(401).json({ message: 'Email or password is incorrect.' })
+    return
+  }
+
+  const token = randomBytes(32).toString('hex')
+  insertSession.run(token, user.id, new Date(Date.now() + sessionDurationMs).toISOString())
+  setSessionCookie(response, token)
+  response.json({ user: publicUser(user) })
+})
+
+app.get('/api/auth/me', (request, response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return
+  }
+  response.json({ user: publicUser(user) })
+})
+
+app.post('/api/auth/logout', (request, response) => {
+  const token = readSessionToken(request)
+  if (token) deleteSession.run(token)
+  response.setHeader('Set-Cookie', 'farflung_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax')
+  response.status(204).send()
+})
+
+app.get('/api/health', (_request, response) => {
+  response.json({ status: 'ok', service: 'backend' })
+})
+
+app.listen(port, () => {
+  console.log(`[backend] listening on http://localhost:${port}`)
+})
+
+process.on('SIGINT', () => {
+  database.close()
+  process.exit(0)
+})
+
+process.on('SIGTERM', () => {
+  database.close()
+  process.exit(0)
+})
