@@ -7,6 +7,7 @@ import {
   database,
   DEFAULT_PACKAGE_CAPACITY,
   deleteSession,
+  findAllPackages,
   findBookingById,
   findPackageById,
   findSessionUser,
@@ -242,13 +243,48 @@ app.post('/api/bookings', (request, response) => {
   }
 })
 
+app.get('/api/packages', (_request, response) => {
+  try {
+    const packages = findAllPackages.all().map((pkg) => ({
+      ...pkg,
+      highlights: JSON.parse(pkg.highlights),
+    }))
+    response.json({ packages })
+  } catch {
+    response.status(500).json({ message: 'Could not retrieve packages.' })
+  }
+})
+
+app.get('/api/packages/:id', (request, response) => {
+  const id = Number(request.params.id)
+  if (!id || isNaN(id) || id <= 0) {
+    response.status(400).json({ message: 'Invalid package ID.' })
+    return
+  }
+  const pkg = findPackageById.get(id)
+  if (!pkg) {
+    response.status(404).json({ message: 'Tourism package not found.' })
+    return
+  }
+  response.json({
+    package: {
+      ...pkg,
+      highlights: JSON.parse(pkg.highlights),
+    },
+  })
+})
+
 app.get('/api/health', (_request, response) => {
   response.json({ status: 'ok', service: 'backend' })
 })
 
-app.listen(port, () => {
-  console.log(`[backend] listening on http://localhost:${port}`)
-})
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(port, () => {
+    console.log(`[backend] listening on http://localhost:${port}`)
+  })
+}
+
+export { app }
 
 process.on('SIGINT', () => {
   database.close()
