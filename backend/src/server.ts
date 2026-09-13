@@ -127,6 +127,31 @@ app.post('/api/auth/logout', (request, response) => {
   response.status(204).send()
 })
 
+const isValidPositiveInteger = (val: unknown): boolean => {
+  if (typeof val === 'number') {
+    return Number.isInteger(val) && val > 0
+  }
+  if (typeof val === 'string' && val.trim() !== '') {
+    const num = Number(val.trim())
+    return Number.isInteger(num) && num > 0
+  }
+  return false
+}
+
+const isValidCalendarDate = (dateStr: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false
+  const [yearStr, monthStr, dayStr] = dateStr.split('-')
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const day = Number(dayStr)
+  const dateObj = new Date(Date.UTC(year, month - 1, day))
+  return (
+    dateObj.getUTCFullYear() === year &&
+    dateObj.getUTCMonth() === month - 1 &&
+    dateObj.getUTCDate() === day
+  )
+}
+
 app.post('/api/bookings', (request, response) => {
   const token = readSessionToken(request)
   const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
@@ -135,18 +160,43 @@ app.post('/api/bookings', (request, response) => {
     return
   }
 
-  const rawPackageId = request.body?.package_id ?? request.body?.packageId
-  const rawTravelDate = request.body?.travel_date ?? request.body?.travelDate
-  const rawTravelersCount = request.body?.travelers_count ?? request.body?.travelersCount
+  const rawPackageId = request.body?.package_id !== undefined ? request.body.package_id : request.body?.packageId
+  const rawTravelDate = request.body?.travel_date !== undefined ? request.body.travel_date : request.body?.travelDate
+  const rawTravelersCount = request.body?.travelers_count !== undefined ? request.body.travelers_count : request.body?.travelersCount
 
-  const packageId = Number(rawPackageId)
-  const travelDate = typeof rawTravelDate === 'string' ? rawTravelDate.trim() : ''
-  const travelersCount = Number(rawTravelersCount)
-
-  if (!rawPackageId || isNaN(packageId) || !travelDate || isNaN(travelersCount) || travelersCount <= 0) {
-    response.status(400).json({ message: 'Valid package ID, travel date, and number of travelers are required.' })
+  // 1. Validate package_id
+  if (rawPackageId === undefined || rawPackageId === null || (typeof rawPackageId === 'string' && rawPackageId.trim() === '')) {
+    response.status(400).json({ message: 'Package ID is required.' })
     return
   }
+  if (!isValidPositiveInteger(rawPackageId)) {
+    response.status(400).json({ message: 'Package ID must be a valid positive integer.' })
+    return
+  }
+
+  // 2. Validate travel_date
+  if (rawTravelDate === undefined || rawTravelDate === null || (typeof rawTravelDate === 'string' && rawTravelDate.trim() === '')) {
+    response.status(400).json({ message: 'Travel date is required.' })
+    return
+  }
+  if (typeof rawTravelDate !== 'string' || !isValidCalendarDate(rawTravelDate.trim())) {
+    response.status(400).json({ message: 'Travel date must be a valid date in YYYY-MM-DD format.' })
+    return
+  }
+
+  // 3. Validate travelers_count
+  if (rawTravelersCount === undefined || rawTravelersCount === null || (typeof rawTravelersCount === 'string' && rawTravelersCount.trim() === '')) {
+    response.status(400).json({ message: 'Number of travelers is required.' })
+    return
+  }
+  if (!isValidPositiveInteger(rawTravelersCount)) {
+    response.status(400).json({ message: 'Number of travelers must be a positive integer greater than 0.' })
+    return
+  }
+
+  const packageId = Number(rawPackageId)
+  const travelDate = String(rawTravelDate).trim()
+  const travelersCount = Number(rawTravelersCount)
 
   const pkg = findPackageById.get(packageId)
   if (!pkg) {
