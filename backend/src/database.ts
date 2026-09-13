@@ -191,7 +191,12 @@ export const insertBooking = database.prepare<[number, number, string, number, n
   'INSERT INTO bookings (user_id, package_id, travel_date, travelers_count, total_price, status) VALUES (?, ?, ?, ?, ?, ?)',
 )
 
+export const findBookingById = database.prepare<[number], BookingRecord>(
+  'SELECT id, user_id, package_id, travel_date, travelers_count, total_price, status, created_at FROM bookings WHERE id = ?',
+)
+
 export const findBookingsByUserId = database.prepare<[number], BookingRecord>(
   'SELECT id, user_id, package_id, travel_date, travelers_count, total_price, status, created_at FROM bookings WHERE user_id = ? ORDER BY created_at DESC',
 )
+
 

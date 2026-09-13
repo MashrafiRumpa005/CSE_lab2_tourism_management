@@ -6,9 +6,12 @@ import { promisify } from 'node:util'
 import {
   database,
   deleteSession,
+  findBookingById,
+  findPackageById,
   findSessionUser,
   findUserByEmail,
   findUserById,
+  insertBooking,
   insertSession,
   insertUser,
 } from './database.js'
@@ -120,6 +123,61 @@ app.post('/api/auth/logout', (request, response) => {
   if (token) deleteSession.run(token)
   response.setHeader('Set-Cookie', 'farflung_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax')
   response.status(204).send()
+})
+
+app.post('/api/bookings', (request, response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return
+  }
+
+  const rawPackageId = request.body?.package_id ?? request.body?.packageId
+  const rawTravelDate = request.body?.travel_date ?? request.body?.travelDate
+  const rawTravelersCount = request.body?.travelers_count ?? request.body?.travelersCount
+
+  const packageId = Number(rawPackageId)
+  const travelDate = typeof rawTravelDate === 'string' ? rawTravelDate.trim() : ''
+  const travelersCount = Number(rawTravelersCount)
+
+  if (!rawPackageId || isNaN(packageId) || !travelDate || isNaN(travelersCount) || travelersCount <= 0) {
+    response.status(400).json({ message: 'Valid package ID, travel date, and number of travelers are required.' })
+    return
+  }
+
+  const pkg = findPackageById.get(packageId)
+  if (!pkg) {
+    response.status(404).json({ message: 'Tourism package not found.' })
+    return
+  }
+
+  // Calculate total price on server using package price stored in database
+  const totalPrice = pkg.price * travelersCount
+
+  try {
+    const result = insertBooking.run(user.id, pkg.id, travelDate, travelersCount, totalPrice, 'confirmed')
+    const booking = findBookingById.get(Number(result.lastInsertRowid))
+    if (!booking) {
+      throw new Error('Booking could not be retrieved')
+    }
+
+    response.status(201).json({
+      success: true,
+      booking: {
+        id: booking.id,
+        user_id: booking.user_id,
+        package_id: booking.package_id,
+        travel_date: booking.travel_date,
+        travelers_count: booking.travelers_count,
+        total_price: booking.total_price,
+        status: booking.status,
+        created_at: booking.created_at,
+      },
+    })
+  } catch (error) {
+    response.status(500).json({ message: 'Could not create the booking.' })
+  }
 })
 
 app.get('/api/health', (_request, response) => {
