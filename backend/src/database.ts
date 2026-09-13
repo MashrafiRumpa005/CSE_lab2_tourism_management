@@ -199,4 +199,13 @@ export const findBookingsByUserId = database.prepare<[number], BookingRecord>(
   'SELECT id, user_id, package_id, travel_date, travelers_count, total_price, status, created_at FROM bookings WHERE user_id = ? ORDER BY created_at DESC',
 )
 
+export const DEFAULT_PACKAGE_CAPACITY = 10
+
+export const getPackageBookedCount = database.prepare<[number], { total: number }>(`
+  SELECT COALESCE(SUM(travelers_count), 0) AS total
+  FROM bookings
+  WHERE package_id = ? AND status = 'confirmed'
+`)
+
+
 

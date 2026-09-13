@@ -5,12 +5,14 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:cry
 import { promisify } from 'node:util'
 import {
   database,
+  DEFAULT_PACKAGE_CAPACITY,
   deleteSession,
   findBookingById,
   findPackageById,
   findSessionUser,
   findUserByEmail,
   findUserById,
+  getPackageBookedCount,
   insertBooking,
   insertSession,
   insertUser,
@@ -149,6 +151,16 @@ app.post('/api/bookings', (request, response) => {
   const pkg = findPackageById.get(packageId)
   if (!pkg) {
     response.status(404).json({ message: 'Tourism package not found.' })
+    return
+  }
+
+  // Check whether the requested package has enough availability for the requested travelers_count
+  const packageCapacity = (pkg as any).capacity ?? DEFAULT_PACKAGE_CAPACITY
+  const bookedTravelers = getPackageBookedCount.get(pkg.id)?.total ?? 0
+  const availableCapacity = packageCapacity - bookedTravelers
+
+  if (travelersCount > availableCapacity) {
+    response.status(400).json({ message: 'Not enough availability for this package.' })
     return
   }
 
