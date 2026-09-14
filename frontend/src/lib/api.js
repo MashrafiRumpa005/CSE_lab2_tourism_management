@@ -25,3 +25,5 @@ export const getCurrentUser = () => request("/api/auth/me");
 export const getPackages = () => request("/api/packages");
 export const getPackage = (id) => request(`/api/packages/${id}`);
 export const createBooking = (data) => request("/api/bookings", { method: "POST", body: JSON.stringify(data) });
+export const getMyBookings = () => request("/api/bookings/my");
+

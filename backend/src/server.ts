@@ -9,6 +9,7 @@ import {
   deleteSession,
   findAllPackages,
   findBookingById,
+  findBookingsByUserId,
   findPackageById,
   findSessionUser,
   findUserByEmail,
@@ -242,6 +243,35 @@ app.post('/api/bookings', (request, response) => {
     response.status(500).json({ message: 'Could not create the booking.' })
   }
 })
+
+app.get('/api/bookings/my', (request, response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return
+  }
+
+  const userBookings = findBookingsByUserId.all(user.id)
+  const bookings = userBookings.map((b) => {
+    const pkg = findPackageById.get(b.package_id)
+    return {
+      id: b.id,
+      booking_id: b.id,
+      package_id: b.package_id,
+      package_title: pkg?.title ?? '',
+      destination: pkg?.destination ?? '',
+      travel_date: b.travel_date,
+      travelers_count: b.travelers_count,
+      total_price: b.total_price,
+      status: b.status,
+      created_at: b.created_at,
+    }
+  })
+
+  response.json(bookings)
+})
+
 
 app.get('/api/packages', (_request, response) => {
   try {
