@@ -18,6 +18,7 @@ import {
   insertBooking,
   insertSession,
   insertUser,
+  updateBookingStatus,
 } from './database.js'
 
 const app = express()
@@ -131,11 +132,11 @@ app.post('/api/auth/logout', (request, response) => {
 
 const isValidPositiveInteger = (val: unknown): boolean => {
   if (typeof val === 'number') {
-    return Number.isInteger(val) && val > 0
+    return Number.isSafeInteger(val) && val > 0
   }
-  if (typeof val === 'string' && val.trim() !== '') {
+  if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
     const num = Number(val.trim())
-    return Number.isInteger(num) && num > 0
+    return Number.isSafeInteger(num) && num > 0
   }
   return false
 }
@@ -271,6 +272,62 @@ app.get('/api/bookings/my', (request, response) => {
 
   response.json(bookings)
 })
+
+const handleCancelBooking = (request: express.Request, response: express.Response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return
+  }
+
+  const rawId = request.params.id
+  if (!rawId || !isValidPositiveInteger(rawId)) {
+    response.status(400).json({ message: 'Invalid booking ID.' })
+    return
+  }
+
+  const bookingId = Number(rawId)
+  const booking = findBookingById.get(bookingId)
+  if (!booking || booking.user_id !== user.id) {
+    response.status(404).json({ message: 'Booking not found.' })
+    return
+  }
+
+  if (booking.status === 'cancelled') {
+    response.status(400).json({ message: 'Booking is already cancelled.' })
+    return
+  }
+
+  try {
+    updateBookingStatus.run('cancelled', booking.id)
+    const updated = findBookingById.get(booking.id)
+    if (!updated) {
+      throw new Error('Booking could not be retrieved')
+    }
+
+    response.json({
+      success: true,
+      message: 'Booking cancelled successfully.',
+      booking: {
+        id: updated.id,
+        booking_id: updated.id,
+        user_id: updated.user_id,
+        package_id: updated.package_id,
+        travel_date: updated.travel_date,
+        travelers_count: updated.travelers_count,
+        total_price: updated.total_price,
+        status: updated.status,
+        created_at: updated.created_at,
+      },
+    })
+  } catch (error) {
+    response.status(500).json({ message: 'Could not cancel the booking.' })
+  }
+}
+
+app.patch('/api/bookings/:id/cancel', handleCancelBooking)
+app.post('/api/bookings/:id/cancel', handleCancelBooking)
 
 
 app.get('/api/packages', (_request, response) => {

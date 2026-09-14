@@ -207,5 +207,9 @@ export const getPackageBookedCount = database.prepare<[number], { total: number 
   WHERE package_id = ? AND status = 'confirmed'
 `)
 
+export const updateBookingStatus = database.prepare<[string, number]>(
+  'UPDATE bookings SET status = ? WHERE id = ?',
+)
+
 
 

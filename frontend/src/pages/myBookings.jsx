@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
+  Ban,
   CalendarDays,
   CheckCircle2,
   Compass,
@@ -11,15 +12,19 @@ import {
   Plane,
   ShieldCheck,
   Users,
+  XCircle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import SiteHeader from "../components/SiteHeader.jsx";
-import { getMyBookings } from "../lib/api.js";
+import { cancelBooking, getMyBookings } from "../lib/api.js";
 
 export default function MyBookingsPage() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
+  const [confirmingId, setConfirmingId] = useState(null);
+  const [actionFeedback, setActionFeedback] = useState(null);
 
   useEffect(() => {
     let ignore = false;
@@ -55,6 +60,41 @@ export default function MyBookingsPage() {
       ignore = true;
     };
   }, []);
+
+  const handleCancel = async (bookingId) => {
+    setCancellingId(bookingId);
+    setActionFeedback(null);
+
+    try {
+      const response = await cancelBooking(bookingId);
+      setBookings((prev) =>
+        prev.map((b) => {
+          const bId = b.booking_id ?? b.id;
+          if (bId === bookingId) {
+            return {
+              ...b,
+              status: "cancelled",
+            };
+          }
+          return b;
+        })
+      );
+      setConfirmingId(null);
+      setActionFeedback({
+        type: "success",
+        bookingId,
+        message: response?.message ?? "Booking cancelled successfully.",
+      });
+    } catch (err) {
+      setActionFeedback({
+        type: "error",
+        bookingId,
+        message: err.message || "Failed to cancel booking. Please try again.",
+      });
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat("en-US", {
@@ -185,17 +225,24 @@ export default function MyBookingsPage() {
                   const status = booking.status || "confirmed";
 
                   return (
-                    <article key={bookingId} className="my-booking-card">
+                    <article key={bookingId} className={`my-booking-card ${status === "cancelled" ? "is-cancelled" : ""}`}>
                       <div className="my-booking-header">
                         <div className="booking-reference-badge">
                           <span>Booking ID</span>
                           <strong>#{bookingId}</strong>
                         </div>
                         <span className={`booking-status-pill status-${status}`}>
-                          <CheckCircle2 size={13} />
+                          {status === "cancelled" ? <Ban size={13} /> : <CheckCircle2 size={13} />}
                           {status}
                         </span>
                       </div>
+
+                      {actionFeedback && actionFeedback.bookingId === bookingId && (
+                        <div className={`booking-card-feedback feedback-${actionFeedback.type}`} role="alert">
+                          {actionFeedback.type === "success" ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                          <span>{actionFeedback.message}</span>
+                        </div>
+                      )}
 
                       <div className="my-booking-body">
                         <div className="my-booking-destination-tag">
@@ -231,9 +278,60 @@ export default function MyBookingsPage() {
 
                       <div className="my-booking-footer">
                         <div className="my-booking-price-wrap">
-                          <span className="price-label">Total Price (Confirmed)</span>
-                          <strong className="price-val">{formatCurrency(totalPrice)}</strong>
+                          <span className="price-label">
+                            Total Price ({status === "cancelled" ? "Cancelled" : "Confirmed"})
+                          </span>
+                          <strong className={`price-val ${status === "cancelled" ? "price-val-cancelled" : ""}`}>
+                            {formatCurrency(totalPrice)}
+                          </strong>
                         </div>
+
+                        {status !== "cancelled" && (
+                          <div className="my-booking-actions">
+                            {confirmingId === bookingId ? (
+                              <div className="cancel-confirm-box">
+                                <p className="cancel-confirm-text">Cancel reservation?</p>
+                                <div className="cancel-confirm-btns">
+                                  <button
+                                    type="button"
+                                    className="btn-cancel-confirm"
+                                    disabled={cancellingId === bookingId}
+                                    onClick={() => handleCancel(bookingId)}
+                                  >
+                                    {cancellingId === bookingId ? (
+                                      <>
+                                        <Loader2 className="animate-spin" size={13} />
+                                        <span>Cancelling...</span>
+                                      </>
+                                    ) : (
+                                      "Yes, cancel"
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-cancel-dismiss"
+                                    disabled={cancellingId === bookingId}
+                                    onClick={() => setConfirmingId(null)}
+                                  >
+                                    Keep
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="booking-cancel-button"
+                                onClick={() => {
+                                  setActionFeedback(null);
+                                  setConfirmingId(bookingId);
+                                }}
+                              >
+                                <Ban size={13} />
+                                <span>Cancel Booking</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </article>
                   );

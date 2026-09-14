@@ -3947,6 +3947,12 @@ body,
   border: 1px solid #c2e2d9;
 }
 
+.booking-status-pill.status-cancelled {
+  background: #fdf2f2;
+  color: #9b1c1c;
+  border: 1px solid #f8b4b4;
+}
+
 .my-booking-body {
   padding: 1.5rem;
   flex: 1;
@@ -4036,6 +4042,128 @@ body,
   color: #0b2e2c;
 }
 
+.price-val-cancelled {
+  color: #727c78 !important;
+}
+
+.my-booking-card.is-cancelled {
+  opacity: 0.88;
+  border-color: #ded5be;
+}
+
+.booking-card-feedback {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid transparent;
+  animation: fadeInAlert 0.25s ease;
+}
+
+.booking-card-feedback.feedback-success {
+  background: #eef7f4;
+  color: #1b6356;
+  border-color: #c2e2d9;
+}
+
+.booking-card-feedback.feedback-error {
+  background: #fdf2f2;
+  color: #9b1c1c;
+  border-color: #f8b4b4;
+}
+
+.my-booking-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.booking-cancel-button {
+  background: #ffffff;
+  border: 1px solid #dc3545;
+  color: #b02a37;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s ease;
+}
+
+.booking-cancel-button:hover {
+  background: #dc3545;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.25);
+}
+
+.cancel-confirm-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  animation: fadeInAlert 0.2s ease;
+}
+
+.cancel-confirm-text {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #b02a37;
+  margin: 0;
+}
+
+.cancel-confirm-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-cancel-confirm {
+  background: #b02a37;
+  color: #ffffff;
+  border: 1px solid #b02a37;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: background 0.15s ease;
+}
+
+.btn-cancel-confirm:hover:not(:disabled) {
+  background: #8f1f2b;
+}
+
+.btn-cancel-confirm:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn-cancel-dismiss {
+  background: #f0eae1;
+  color: #404b47;
+  border: 1px solid #ded5be;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-cancel-dismiss:hover:not(:disabled) {
+  background: #e2d8c9;
+}
+
 /* Mobile responsive adjustments */
 @media (max-width: 640px) {
   .my-bookings-top-strip {
@@ -4053,14 +4181,35 @@ body,
   }
 
   .my-booking-header,
-  .my-booking-body,
+  .my-booking-body {
+    padding: 1.15rem;
+  }
+
   .my-booking-footer {
     padding: 1.15rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .my-booking-actions {
+    justify-content: flex-start;
+  }
+
+  .cancel-confirm-box {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .booking-cancel-button {
+    width: 100%;
+    justify-content: center;
   }
 
   .my-bookings-card-state {
     padding: 2.25rem 1.25rem;
   }
 }
+
 
 
