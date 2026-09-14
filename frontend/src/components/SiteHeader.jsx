@@ -7,6 +7,7 @@ const links = [
   { label: "Home", to: "/", hash: "#home" },
   { label: "Destinations", to: "/destinations" },
   { label: "Packages", to: "/packages" },
+  { label: "My Bookings", to: "/my-bookings" },
 ];
 
 export default function SiteHeader() {
@@ -24,7 +25,10 @@ export default function SiteHeader() {
   }, [location.pathname]);
 
   const closeMenu = () => setMenuOpen(false);
-  const isActive = (link) => location.pathname === link.to || (link.hash && location.hash === link.hash);
+  const isActive = (link) =>
+    location.pathname === link.to ||
+    (link.to === "/my-bookings" && location.pathname === "/bookings") ||
+    (link.hash && location.hash === link.hash);
 
   const handleLogout = async () => {
     await logOut();

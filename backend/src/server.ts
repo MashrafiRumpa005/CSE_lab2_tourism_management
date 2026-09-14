@@ -5,12 +5,20 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:cry
 import { promisify } from 'node:util'
 import {
   database,
+  DEFAULT_PACKAGE_CAPACITY,
   deleteSession,
+  findAllPackages,
+  findBookingById,
+  findBookingsByUserId,
+  findPackageById,
   findSessionUser,
   findUserByEmail,
   findUserById,
+  getPackageBookedCount,
+  insertBooking,
   insertSession,
   insertUser,
+  updateBookingStatus,
 } from './database.js'
 
 const app = express()
@@ -122,13 +130,248 @@ app.post('/api/auth/logout', (request, response) => {
   response.status(204).send()
 })
 
+const isValidPositiveInteger = (val: unknown): boolean => {
+  if (typeof val === 'number') {
+    return Number.isSafeInteger(val) && val > 0
+  }
+  if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
+    const num = Number(val.trim())
+    return Number.isSafeInteger(num) && num > 0
+  }
+  return false
+}
+
+const isValidCalendarDate = (dateStr: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false
+  const [yearStr, monthStr, dayStr] = dateStr.split('-')
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const day = Number(dayStr)
+  const dateObj = new Date(Date.UTC(year, month - 1, day))
+  return (
+    dateObj.getUTCFullYear() === year &&
+    dateObj.getUTCMonth() === month - 1 &&
+    dateObj.getUTCDate() === day
+  )
+}
+
+app.post('/api/bookings', (request, response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return
+  }
+
+  const rawPackageId = request.body?.package_id !== undefined ? request.body.package_id : request.body?.packageId
+  const rawTravelDate = request.body?.travel_date !== undefined ? request.body.travel_date : request.body?.travelDate
+  const rawTravelersCount = request.body?.travelers_count !== undefined ? request.body.travelers_count : request.body?.travelersCount
+
+  // 1. Validate package_id
+  if (rawPackageId === undefined || rawPackageId === null || (typeof rawPackageId === 'string' && rawPackageId.trim() === '')) {
+    response.status(400).json({ message: 'Package ID is required.' })
+    return
+  }
+  if (!isValidPositiveInteger(rawPackageId)) {
+    response.status(400).json({ message: 'Package ID must be a valid positive integer.' })
+    return
+  }
+
+  // 2. Validate travel_date
+  if (rawTravelDate === undefined || rawTravelDate === null || (typeof rawTravelDate === 'string' && rawTravelDate.trim() === '')) {
+    response.status(400).json({ message: 'Travel date is required.' })
+    return
+  }
+  if (typeof rawTravelDate !== 'string' || !isValidCalendarDate(rawTravelDate.trim())) {
+    response.status(400).json({ message: 'Travel date must be a valid date in YYYY-MM-DD format.' })
+    return
+  }
+
+  // 3. Validate travelers_count
+  if (rawTravelersCount === undefined || rawTravelersCount === null || (typeof rawTravelersCount === 'string' && rawTravelersCount.trim() === '')) {
+    response.status(400).json({ message: 'Number of travelers is required.' })
+    return
+  }
+  if (!isValidPositiveInteger(rawTravelersCount)) {
+    response.status(400).json({ message: 'Number of travelers must be a positive integer greater than 0.' })
+    return
+  }
+
+  const packageId = Number(rawPackageId)
+  const travelDate = String(rawTravelDate).trim()
+  const travelersCount = Number(rawTravelersCount)
+
+  const pkg = findPackageById.get(packageId)
+  if (!pkg) {
+    response.status(404).json({ message: 'Tourism package not found.' })
+    return
+  }
+
+  // Check whether the requested package has enough availability for the requested travelers_count
+  const packageCapacity = (pkg as any).capacity ?? DEFAULT_PACKAGE_CAPACITY
+  const bookedTravelers = getPackageBookedCount.get(pkg.id)?.total ?? 0
+  const availableCapacity = packageCapacity - bookedTravelers
+
+  if (travelersCount > availableCapacity) {
+    response.status(400).json({ message: 'Not enough availability for this package.' })
+    return
+  }
+
+  // Calculate total price on server using package price stored in database
+  const totalPrice = pkg.price * travelersCount
+
+  try {
+    const result = insertBooking.run(user.id, pkg.id, travelDate, travelersCount, totalPrice, 'confirmed')
+    const booking = findBookingById.get(Number(result.lastInsertRowid))
+    if (!booking) {
+      throw new Error('Booking could not be retrieved')
+    }
+
+    response.status(201).json({
+      success: true,
+      booking: {
+        id: booking.id,
+        user_id: booking.user_id,
+        package_id: booking.package_id,
+        travel_date: booking.travel_date,
+        travelers_count: booking.travelers_count,
+        total_price: booking.total_price,
+        status: booking.status,
+        created_at: booking.created_at,
+      },
+    })
+  } catch (error) {
+    response.status(500).json({ message: 'Could not create the booking.' })
+  }
+})
+
+app.get('/api/bookings/my', (request, response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return
+  }
+
+  const userBookings = findBookingsByUserId.all(user.id)
+  const bookings = userBookings.map((b) => {
+    const pkg = findPackageById.get(b.package_id)
+    return {
+      id: b.id,
+      booking_id: b.id,
+      package_id: b.package_id,
+      package_title: pkg?.title ?? '',
+      destination: pkg?.destination ?? '',
+      travel_date: b.travel_date,
+      travelers_count: b.travelers_count,
+      total_price: b.total_price,
+      status: b.status,
+      created_at: b.created_at,
+    }
+  })
+
+  response.json(bookings)
+})
+
+const handleCancelBooking = (request: express.Request, response: express.Response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return
+  }
+
+  const rawId = request.params.id
+  if (!rawId || !isValidPositiveInteger(rawId)) {
+    response.status(400).json({ message: 'Invalid booking ID.' })
+    return
+  }
+
+  const bookingId = Number(rawId)
+  const booking = findBookingById.get(bookingId)
+  if (!booking || booking.user_id !== user.id) {
+    response.status(404).json({ message: 'Booking not found.' })
+    return
+  }
+
+  if (booking.status === 'cancelled') {
+    response.status(400).json({ message: 'Booking is already cancelled.' })
+    return
+  }
+
+  try {
+    updateBookingStatus.run('cancelled', booking.id)
+    const updated = findBookingById.get(booking.id)
+    if (!updated) {
+      throw new Error('Booking could not be retrieved')
+    }
+
+    response.json({
+      success: true,
+      message: 'Booking cancelled successfully.',
+      booking: {
+        id: updated.id,
+        booking_id: updated.id,
+        user_id: updated.user_id,
+        package_id: updated.package_id,
+        travel_date: updated.travel_date,
+        travelers_count: updated.travelers_count,
+        total_price: updated.total_price,
+        status: updated.status,
+        created_at: updated.created_at,
+      },
+    })
+  } catch (error) {
+    response.status(500).json({ message: 'Could not cancel the booking.' })
+  }
+}
+
+app.patch('/api/bookings/:id/cancel', handleCancelBooking)
+app.post('/api/bookings/:id/cancel', handleCancelBooking)
+
+
+app.get('/api/packages', (_request, response) => {
+  try {
+    const packages = findAllPackages.all().map((pkg) => ({
+      ...pkg,
+      highlights: JSON.parse(pkg.highlights),
+    }))
+    response.json({ packages })
+  } catch {
+    response.status(500).json({ message: 'Could not retrieve packages.' })
+  }
+})
+
+app.get('/api/packages/:id', (request, response) => {
+  const id = Number(request.params.id)
+  if (!id || isNaN(id) || id <= 0) {
+    response.status(400).json({ message: 'Invalid package ID.' })
+    return
+  }
+  const pkg = findPackageById.get(id)
+  if (!pkg) {
+    response.status(404).json({ message: 'Tourism package not found.' })
+    return
+  }
+  response.json({
+    package: {
+      ...pkg,
+      highlights: JSON.parse(pkg.highlights),
+    },
+  })
+})
+
 app.get('/api/health', (_request, response) => {
   response.json({ status: 'ok', service: 'backend' })
 })
 
-app.listen(port, () => {
-  console.log(`[backend] listening on http://localhost:${port}`)
-})
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(port, () => {
+    console.log(`[backend] listening on http://localhost:${port}`)
+  })
+}
+
+export { app }
 
 process.on('SIGINT', () => {
   database.close()

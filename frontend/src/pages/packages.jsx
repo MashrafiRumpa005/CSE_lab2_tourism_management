@@ -3,11 +3,12 @@ import { Link } from "react-router-dom";
 import SiteHeader from "../components/SiteHeader.jsx";
 
 const packages = [
-  { title: "Kyoto, slowly", destination: "Japan", days: "7 days", price: "$1,180", route: "Dhaka -> Tokyo -> Kyoto", detail: "Ryokan stay, daily breakfast, and Japan visa guidance.", highlights: ["Arashiyama bamboo grove at sunrise", "Tea ceremony in Gion", "Day trip to Nara"] },
-  { title: "Santorini escape", destination: "Greece", days: "5 days", price: "$940", route: "Dhaka -> Athens -> Santorini", detail: "Caldera-facing stay, private sailing, and Schengen checklist.", highlights: ["Sunset walk in Oia", "Private caldera sailing", "Wine tasting in Pyrgos"] },
-  { title: "Patagonia trek", destination: "Argentina · Chile", days: "10 days", price: "$1,640", route: "Dhaka -> Santiago -> Patagonia", detail: "Trek lodge, guided camps, and border support for the W circuit.", highlights: ["Torres del Paine W trek", "Glacier boat crossing", "Guided camp nights"] },
-  { title: "Marrakech & the Atlas", destination: "Morocco", days: "6 days", price: "$860", route: "Dhaka -> Casablanca -> Marrakech", detail: "A riad stay, local food, and document review before departure.", highlights: ["Medina riad stay", "Atlas Mountains day hike", "Evening at Jemaa el-Fnaa"] },
+  { id: 1, title: "Kyoto, slowly", destination: "Japan", days: "7 days", price: "$1,180", route: "Dhaka -> Tokyo -> Kyoto", detail: "Ryokan stay, daily breakfast, and Japan visa guidance.", highlights: ["Arashiyama bamboo grove at sunrise", "Tea ceremony in Gion", "Day trip to Nara"] },
+  { id: 2, title: "Santorini escape", destination: "Greece", days: "5 days", price: "$940", route: "Dhaka -> Athens -> Santorini", detail: "Caldera-facing stay, private sailing, and Schengen checklist.", highlights: ["Sunset walk in Oia", "Private caldera sailing", "Wine tasting in Pyrgos"] },
+  { id: 3, title: "Patagonia trek", destination: "Argentina · Chile", days: "10 days", price: "$1,640", route: "Dhaka -> Santiago -> Patagonia", detail: "Trek lodge, guided camps, and border support for the W circuit.", highlights: ["Torres del Paine W trek", "Glacier boat crossing", "Guided camp nights"] },
+  { id: 4, title: "Marrakech & the Atlas", destination: "Morocco", days: "6 days", price: "$860", route: "Dhaka -> Casablanca -> Marrakech", detail: "A riad stay, local food, and document review before departure.", highlights: ["Medina riad stay", "Atlas Mountains day hike", "Evening at Jemaa el-Fnaa"] },
 ];
+
 
 export default function PackagesPage() {
   return (
@@ -28,7 +29,7 @@ export default function PackagesPage() {
                 <div className="package-detail-top"><span>{item.destination}</span><b>{item.days}</b></div>
                 <h3>{item.title}</h3><p className="package-route"><Plane size={15} /> {item.route}</p><p className="package-detail-copy">{item.detail}</p>
                 <ul>{item.highlights.map((highlight) => <li key={highlight}><Check size={15} /> {highlight}</li>)}</ul>
-                <div className="package-detail-bottom"><strong>{item.price}<small> / person</small></strong><Link to="/signup">Plan this trip <ArrowRight size={15} /></Link></div>
+                <div className="package-detail-bottom"><strong>{item.price}<small> / person</small></strong><Link to={`/book?packageId=${item.id}`}>Book this trip <ArrowRight size={15} /></Link></div>
               </article>
             ))}
           </div>
