@@ -1,14 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, CalendarDays, Compass, MapPin, Search, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import SiteHeader from "../components/SiteHeader.jsx";
+import { getPackages } from "../lib/api.js";
 
-const destinations = [
-  { name: "Kyoto", country: "Japan", days: "7 days", price: "$1,180", image: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=900&q=85" },
-  { name: "Santorini", country: "Greece", days: "5 days", price: "$940", image: "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=900&q=85" },
-  { name: "Patagonia", country: "Argentina · Chile", days: "10 days", price: "$1,640", image: "https://images.unsplash.com/photo-1478827536114-da961b7f86d2?auto=format&fit=crop&w=900&q=85" },
-  { name: "Marrakech", country: "Morocco", days: "6 days", price: "$860", image: "https://images.unsplash.com/photo-1548013146-72479768bada?auto=format&fit=crop&w=900&q=85" },
+const fallbackImages = [
+  "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=900&q=85",
+  "https://images.unsplash.com/photo-1570077188670-e3a8d69ac5ff?auto=format&fit=crop&w=900&q=85",
+  "https://images.unsplash.com/photo-1478827536114-da961b7f86d2?auto=format&fit=crop&w=900&q=85",
+  "https://images.unsplash.com/photo-1548013146-72479768bada?auto=format&fit=crop&w=900&q=85",
 ];
+
+const fallbackDestinations = [
+  { name: "Kyoto", country: "Japan", days: "7 days", price: "$1,180", image: fallbackImages[0] },
+  { name: "Santorini", country: "Greece", days: "5 days", price: "$940", image: fallbackImages[1] },
+  { name: "Patagonia", country: "Argentina · Chile", days: "10 days", price: "$1,640", image: fallbackImages[2] },
+  { name: "Marrakech", country: "Morocco", days: "6 days", price: "$860", image: fallbackImages[3] },
+];
+
+const getSafeImageUrl = (value, fallback) => {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  if (/^https?:\/\//i.test(trimmed) || /^data:image\//i.test(trimmed)) return trimmed;
+  return fallback;
+};
 
 function HeroSearch() {
   const navigate = useNavigate();
@@ -67,6 +83,31 @@ function TrustBar() {
 }
 
 function Destinations() {
+  const [featuredDestinations, setFeaturedDestinations] = useState(fallbackDestinations);
+
+  useEffect(() => {
+    let ignore = false;
+    getPackages()
+      .then(({ packages: apiPackages = [] }) => {
+        if (ignore) return;
+        const mapped = apiPackages.slice(0, 4).map((pkg, index) => ({
+          name: pkg.title,
+          country: pkg.destination,
+          days: pkg.days,
+          price: `$${Number(pkg.price).toLocaleString("en-US")}`,
+          image: getSafeImageUrl(pkg.image, fallbackImages[index % fallbackImages.length]),
+        }));
+        setFeaturedDestinations(mapped.length ? mapped : fallbackDestinations);
+      })
+      .catch(() => {
+        if (!ignore) setFeaturedDestinations(fallbackDestinations);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   return (
     <section className="home-section home-destinations" id="destinations">
       <div className="home-section-heading">
@@ -74,8 +115,8 @@ function Destinations() {
         <Link to="/destinations" className="home-text-link">Explore all destinations <ArrowRight size={16} /></Link>
       </div>
       <div className="home-destination-grid">
-        {destinations.map((destination, index) => (
-          <Link key={destination.name} to="/destinations" className={`home-destination-card ${index === 0 ? "is-featured" : ""}`} style={{ backgroundImage: `linear-gradient(180deg, rgba(11,46,44,0.02) 28%, rgba(11,46,44,0.88) 100%), url(${destination.image})` }}>
+        {featuredDestinations.map((destination, index) => (
+          <Link key={`${destination.name}-${index}`} to="/destinations" className={`home-destination-card ${index === 0 ? "is-featured" : ""}`} style={{ backgroundImage: `linear-gradient(180deg, rgba(11,46,44,0.02) 28%, rgba(11,46,44,0.88) 100%), url(${destination.image})` }}>
             <div className="home-destination-card-copy"><span>{destination.country}</span><h3>{destination.name}</h3><small>{destination.days} · from {destination.price}</small></div>
           </Link>
         ))}

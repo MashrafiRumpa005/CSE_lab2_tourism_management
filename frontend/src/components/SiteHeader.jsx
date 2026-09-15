@@ -58,6 +58,7 @@ export default function SiteHeader() {
           <span className="site-departure"><MapPin size={15} /> Dhaka, BD</span>
           {user ? (
             <div className="site-account-actions">
+              {user.role === "admin" && <Link to="/admin" className="site-admin-link">Admin</Link>}
               <Link to="/profile" className="site-profile-link" aria-label="Open profile"><UserCircle size={22} /><span>{user.fullName}</span></Link>
               <button type="button" className="site-logout-button" onClick={handleLogout} aria-label="Log out"><LogOut size={17} /></button>
             </div>
@@ -77,7 +78,7 @@ export default function SiteHeader() {
             </Link>
           ))}
           <div className="site-mobile-actions">
-            {user ? <><Link to="/profile" onClick={closeMenu}>My profile</Link><button type="button" className="site-mobile-logout" onClick={handleLogout}><LogOut size={16} /> Log out</button></> : <><Link to="/login" onClick={closeMenu}>Log in</Link><Link to="/signup" className="site-register" onClick={closeMenu}>Register</Link></>}
+            {user ? <>{user.role === "admin" && <Link to="/admin" onClick={closeMenu}>Admin console</Link>}<Link to="/profile" onClick={closeMenu}>My profile</Link><button type="button" className="site-mobile-logout" onClick={handleLogout}><LogOut size={16} /> Log out</button></> : <><Link to="/login" onClick={closeMenu}>Log in</Link><Link to="/signup" className="site-register" onClick={closeMenu}>Register</Link></>}
           </div>
         </div>
       )}

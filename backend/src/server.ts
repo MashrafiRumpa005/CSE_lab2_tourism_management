@@ -8,14 +8,28 @@ import {
   DEFAULT_PACKAGE_CAPACITY,
   deleteSession,
   findAllPackages,
+  findAllBookings,
+  findAllDestinations,
+  findAllReviews,
+  findDestinationById,
   findBookingById,
   findBookingsByUserId,
   findPackageById,
+  findReviewsByPackage,
   findSessionUser,
   findUserByEmail,
   findUserById,
   getPackageBookedCount,
   insertBooking,
+  insertDestination,
+  insertPackage,
+  insertReview,
+  deleteDestination,
+  deletePackage,
+  deleteReview,
+  updateDestination,
+  updatePackage,
+  updateReviewStatus,
   insertSession,
   insertUser,
   updateBookingStatus,
@@ -30,10 +44,11 @@ app.use(cors({ origin: true, credentials: true }))
 app.use(express.json())
 app.use(morgan('dev'))
 
-const publicUser = (user: { id: number; full_name: string; email: string; created_at: string }) => ({
+const publicUser = (user: { id: number; full_name: string; email: string; role: string; created_at: string }) => ({
   id: user.id,
   fullName: user.full_name,
   email: user.email,
+  role: user.role,
   createdAt: user.created_at,
 })
 
@@ -129,6 +144,20 @@ app.post('/api/auth/logout', (request, response) => {
   response.setHeader('Set-Cookie', 'farflung_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax')
   response.status(204).send()
 })
+
+const requireAdmin = (request: express.Request, response: express.Response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return undefined
+  }
+  if (user.role !== 'admin') {
+    response.status(403).json({ message: 'Administrator access is required.' })
+    return undefined
+  }
+  return user
+}
 
 const isValidPositiveInteger = (val: unknown): boolean => {
   if (typeof val === 'number') {
@@ -359,6 +388,192 @@ app.get('/api/packages/:id', (request, response) => {
       highlights: JSON.parse(pkg.highlights),
     },
   })
+})
+
+app.get('/api/destinations', (_request, response) => {
+  const destinations = findAllDestinations.all()
+  const packages = findAllPackages.all()
+
+  response.json({
+    destinations: calculateDestinationMinimumPrice(destinations, packages),
+  })
+})
+
+app.get('/api/packages/:id/reviews', (request, response) => {
+  const packageId = Number(request.params.id)
+  if (!findPackageById.get(packageId)) {
+    response.status(404).json({ message: 'Tourism package not found.' })
+    return
+  }
+  response.json({ reviews: (awaitableReviews(packageId)) })
+})
+
+const awaitableReviews = (packageId: number) => findReviewsByPackage.all(packageId)
+
+const calculateDestinationMinimumPrice = (destinations: Array<{ id: number; name: string; country: string; region: string; style: string; duration: string; from_price: number; description: string }>, packages: Array<{ id: number; title: string; destination: string; days: string; price: number; route: string; detail: string; highlights: string; created_at: string }>) => {
+  const minPriceByDestination = new Map<string, number>()
+
+  for (const destination of destinations) {
+    const destinationName = destination.name.toLowerCase()
+    const destinationCountry = destination.country.toLowerCase()
+    const countryBase = destinationCountry.split(' · ')[0]
+
+    const matchingPrices = packages
+      .filter((pkg) => {
+        const packageDestination = pkg.destination.toLowerCase()
+        const packageTitle = pkg.title.toLowerCase()
+        const packageRoute = pkg.route.toLowerCase()
+
+        return (
+          packageTitle.includes(destinationName) ||
+          packageRoute.includes(destinationName) ||
+          packageDestination === destinationName ||
+          packageDestination.includes(destinationName) ||
+          destinationCountry.includes(packageDestination) ||
+          (countryBase && packageDestination.includes(countryBase)) ||
+          destinationName.includes(packageDestination)
+        )
+      })
+      .map((pkg) => Number(pkg.price))
+
+    if (matchingPrices.length > 0) {
+      minPriceByDestination.set(destination.name, Math.min(...matchingPrices))
+    }
+  }
+
+  return destinations.map((destination) => ({
+    ...destination,
+    from_price: minPriceByDestination.get(destination.name) ?? Number(destination.from_price ?? 0),
+  }))
+}
+
+app.post('/api/packages/:id/reviews', (request, response) => {
+  const token = readSessionToken(request)
+  const user = token ? findSessionUser.get(token, new Date().toISOString()) : undefined
+  if (!user) {
+    response.status(401).json({ message: 'You are not signed in.' })
+    return
+  }
+  const packageId = Number(request.params.id)
+  const rating = Number(request.body?.rating)
+  const comment = typeof request.body?.comment === 'string' ? request.body.comment.trim() : ''
+  if (!findPackageById.get(packageId) || !Number.isInteger(rating) || rating < 1 || rating > 5 || !comment) {
+    response.status(400).json({ message: 'A package, rating from 1 to 5, and review comment are required.' })
+    return
+  }
+  try {
+    insertReview.run(user.id, packageId, rating, comment)
+    response.status(201).json({ review: findReviewsByPackage.all(packageId)[0] })
+  } catch (error) {
+    response.status(409).json({ message: error instanceof Error && error.message.includes('UNIQUE') ? 'You already reviewed this package.' : 'Could not save review.' })
+  }
+})
+
+app.get('/api/admin/dashboard', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  const metrics = database.prepare(`SELECT
+    (SELECT COUNT(*) FROM users WHERE role = 'traveler') AS travelers,
+    (SELECT COUNT(*) FROM packages) AS packages,
+    (SELECT COUNT(*) FROM destinations) AS destinations,
+    (SELECT COUNT(*) FROM bookings) AS bookings,
+    (SELECT COALESCE(SUM(total_price), 0) FROM bookings WHERE status = 'confirmed') AS revenue,
+    (SELECT COUNT(*) FROM reviews WHERE status = 'published') AS reviews`).get()
+  response.json({ metrics, bookings: findAllBookings.all().slice(0, 8) })
+})
+
+app.get('/api/admin/destinations', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  const destinations = findAllDestinations.all()
+  const packages = findAllPackages.all()
+
+  response.json({ destinations: calculateDestinationMinimumPrice(destinations, packages) })
+})
+
+app.post('/api/admin/destinations', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  const body = request.body ?? {}
+  const image = typeof body.image === 'string' ? body.image.trim() : ''
+  const values = [body.name, body.country, body.region, body.style, body.duration, Number(body.from_price ?? 0), body.description, image]
+  if (values.slice(0, 5).some((value) => typeof value !== 'string' || !value.trim()) || !values[6]?.trim()) {
+    response.status(400).json({ message: 'Name, country, region, style, duration, and description are required.' })
+    return
+  }
+  const result = insertDestination.run(...values as [string, string, string, string, string, number, string, string])
+  response.status(201).json({ destination: findDestinationById.get(Number(result.lastInsertRowid)) })
+})
+
+app.patch('/api/admin/destinations/:id', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  const id = Number(request.params.id)
+  const body = request.body ?? {}
+  const image = typeof body.image === 'string' ? body.image.trim() : ''
+  updateDestination.run(body.name, body.country, body.region, body.style, body.duration, Number(body.from_price ?? 0), body.description, image, id)
+  response.json({ destination: findDestinationById.get(id) })
+})
+
+app.delete('/api/admin/destinations/:id', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  deleteDestination.run(Number(request.params.id))
+  response.status(204).send()
+})
+
+app.post('/api/admin/packages', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  const body = request.body ?? {}
+  const highlights = Array.isArray(body.highlights) ? body.highlights : String(body.highlights ?? '').split('\n').map((item) => item.trim()).filter(Boolean)
+  const image = typeof body.image === 'string' ? body.image.trim() : ''
+  if (!body.title || !body.destination || !body.days || !Number.isFinite(Number(body.price)) || !body.route || !body.detail) {
+    response.status(400).json({ message: 'Title, destination, duration, price, route, and detail are required.' })
+    return
+  }
+  const result = insertPackage.run(body.title, body.destination, body.days, Number(body.price), body.route, body.detail, JSON.stringify(highlights), image)
+  response.status(201).json({ package: findPackageById.get(Number(result.lastInsertRowid)) })
+})
+
+app.patch('/api/admin/packages/:id', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  const body = request.body ?? {}
+  const highlights = Array.isArray(body.highlights) ? body.highlights : String(body.highlights ?? '').split('\n').map((item) => item.trim()).filter(Boolean)
+  const image = typeof body.image === 'string' ? body.image.trim() : ''
+  updatePackage.run(body.title, body.destination, body.days, Number(body.price), body.route, body.detail, JSON.stringify(highlights), image, Number(request.params.id))
+  response.json({ package: findPackageById.get(Number(request.params.id)) })
+})
+
+app.delete('/api/admin/packages/:id', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  try { deletePackage.run(Number(request.params.id)); response.status(204).send() } catch { response.status(409).json({ message: 'Package cannot be deleted while it has bookings.' }) }
+})
+
+app.get('/api/admin/bookings', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  response.json({ bookings: findAllBookings.all() })
+})
+
+app.patch('/api/admin/bookings/:id', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  const status = ['confirmed', 'cancelled', 'completed'].includes(request.body?.status) ? request.body.status : null
+  if (!status) { response.status(400).json({ message: 'Invalid booking status.' }); return }
+  updateBookingStatus.run(status, Number(request.params.id))
+  response.json({ booking: findBookingById.get(Number(request.params.id)) })
+})
+
+app.get('/api/admin/reviews', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  response.json({ reviews: findAllReviews.all() })
+})
+
+app.patch('/api/admin/reviews/:id', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  const status = ['published', 'hidden'].includes(request.body?.status) ? request.body.status : null
+  if (!status) { response.status(400).json({ message: 'Invalid review status.' }); return }
+  updateReviewStatus.run(status, Number(request.params.id))
+  response.status(204).send()
+})
+
+app.delete('/api/admin/reviews/:id', (request, response) => {
+  if (!requireAdmin(request, response)) return
+  deleteReview.run(Number(request.params.id))
+  response.status(204).send()
 })
 
 app.get('/api/health', (_request, response) => {
