@@ -92,6 +92,13 @@ const PACKAGE_IMAGES = {
   4: "https://images.unsplash.com/photo-1548013146-72479768bada?auto=format&fit=crop&w=1200&q=85",
 };
 
+const getSafeImage = (value, fallback) => {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  return /^(https?:|data:image)/i.test(trimmed) ? trimmed : fallback;
+};
+
 export default function BookingPage() {
   const { id: paramId } = useParams();
   const [searchParams] = useSearchParams();
@@ -154,7 +161,7 @@ export default function BookingPage() {
         if (ignore) return;
         const pkg = res?.package;
         if (pkg) {
-          const image = PACKAGE_IMAGES[pkg.id] ?? DEFAULT_PACKAGES[pkg.id]?.image ?? "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1200&q=85";
+          const image = getSafeImage(pkg.image, PACKAGE_IMAGES[pkg.id] ?? DEFAULT_PACKAGES[pkg.id]?.image ?? "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1200&q=85");
           setPackageData({
             ...pkg,
             image,

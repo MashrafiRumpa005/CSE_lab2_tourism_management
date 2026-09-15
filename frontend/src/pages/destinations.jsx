@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,8 +15,9 @@ import {
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import SiteHeader from "../components/SiteHeader.jsx";
+import { getDestinations } from "../lib/api.js";
 
-const destinations = [
+const fallbackDestinations = [
   {
     name: "Kyoto",
     country: "Japan",
@@ -107,6 +108,13 @@ const regions = ["All regions", "Asia", "Europe", "Americas", "Africa"];
 const styles = ["All styles", "Culture", "Beach", "Adventure", "Wellness", "Food"];
 
 function DestinationCard({ destination, favorite, onFavorite, onSelect }) {
+  const renderImage = (src) => {
+    if (typeof src === "string" && /^(https?:|data:image)/i.test(src.trim())) {
+      return { backgroundImage: `url("${src}")` };
+    }
+    return { backgroundImage: undefined };
+  };
+
   return (
     <article className="destination-card">
       <button
@@ -115,7 +123,7 @@ function DestinationCard({ destination, favorite, onFavorite, onSelect }) {
         onClick={() => onSelect(destination)}
         aria-label={`View ${destination.name} details`}
       >
-        <div className={`destination-image ${destination.image}`} />
+        <div className={typeof destination.image === "string" && /^(https?:|data:image)/i.test(destination.image.trim()) ? "destination-image custom-image" : `destination-image ${destination.image}`} style={renderImage(destination.image)} />
         <span className="destination-card-region">{destination.region}</span>
       </button>
       <div className="destination-card-body">
@@ -150,13 +158,20 @@ function DestinationCard({ destination, favorite, onFavorite, onSelect }) {
 }
 
 function DetailPanel({ destination, onClose }) {
+  const renderImage = (src) => {
+    if (typeof src === "string" && /^(https?:|data:image)/i.test(src.trim())) {
+      return { backgroundImage: `url("${src}")` };
+    }
+    return { backgroundImage: undefined };
+  };
+
   return (
     <div className="destination-detail-backdrop" role="presentation" onClick={onClose}>
       <aside className="destination-detail" role="dialog" aria-modal="true" aria-label={`${destination.name} destination details`} onClick={(event) => event.stopPropagation()}>
         <button type="button" className="detail-close" onClick={onClose} aria-label="Close destination details">
           <X size={20} />
         </button>
-        <div className={`detail-image destination-image ${destination.image}`} />
+        <div className={typeof destination.image === "string" && /^(https?:|data:image)/i.test(destination.image.trim()) ? "detail-image destination-image custom-image" : `detail-image destination-image ${destination.image}`} style={renderImage(destination.image)} />
         <div className="detail-content">
           <p className="eyebrow">{destination.region} · from Dhaka</p>
           <h2>{destination.name}</h2>
@@ -182,6 +197,37 @@ export default function DestinationsPage() {
   const [style, setStyle] = useState("All styles");
   const [favorites, setFavorites] = useState([]);
   const [selectedDestination, setSelectedDestination] = useState(null);
+  const [destinations, setDestinations] = useState(fallbackDestinations);
+
+  useEffect(() => {
+    let ignore = false;
+    getDestinations()
+      .then(({ destinations: apiDestinations = [] }) => {
+        if (ignore) return;
+        const mapped = apiDestinations.map((destination) => ({
+          name: destination.name,
+          country: destination.country,
+          region: destination.region || "Asia",
+          style: destination.style || "Culture",
+          duration: destination.duration || "5 days",
+          from: Number(destination.from_price ?? destination.from ?? 0),
+          bestFor: destination.bestFor || `${destination.style || "Curated"} getaway`,
+          route: destination.route || `Dhaka → ${destination.name}`,
+          visa: destination.visa || "Travel guidance included",
+          blurb: destination.description || destination.blurb || `${destination.name} is one of our popular destinations for travelers from Dhaka.`,
+          image: typeof destination.image === "string" && destination.image.trim() ? destination.image : `destination-image-${destination.name.toLowerCase().replace(/\s+/g, "-")}`,
+          highlights: Array.isArray(destination.highlights) ? destination.highlights : (typeof destination.highlights === "string" ? JSON.parse(destination.highlights || "[]") : ["Curated route", "Flexible planning", "Travel support"]),
+        }));
+        setDestinations(mapped.length ? mapped : fallbackDestinations);
+      })
+      .catch(() => {
+        if (!ignore) setDestinations(fallbackDestinations);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const filteredDestinations = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -191,7 +237,7 @@ export default function DestinationsPage() {
       const matchesStyle = style === "All styles" || destination.style === style;
       return matchesQuery && matchesRegion && matchesStyle;
     });
-  }, [query, region, style]);
+  }, [query, region, style, destinations]);
 
   const toggleFavorite = (name) => {
     setFavorites((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);

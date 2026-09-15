@@ -8,6 +8,7 @@ import PackagesPage from './pages/packages.jsx'
 import ProfilePage from './pages/profile.jsx'
 import BookingPage from './pages/booking.jsx'
 import MyBookingsPage from './pages/myBookings.jsx'
+import AdminPage from './pages/admin.jsx'
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
       <Route path="/profile" element={<ProfilePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/admin" element={<AdminPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
